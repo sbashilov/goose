@@ -4,17 +4,15 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
-	"sync"
 )
 
 const VERSION = "v2.7.0-rc3"
 
 var (
-	duplicateCheckOnce sync.Once
-	minVersion         = int64(0)
-	maxVersion         = int64((1 << 63) - 1)
-	timestampFormat    = "20060102150405"
-	verbose            = false
+	minVersion      = int64(0)
+	maxVersion      = int64((1 << 63) - 1)
+	timestampFormat = "20060102150405"
+	verbose         = false
 )
 
 // SetVerbose set the goose verbosity mode
@@ -25,6 +23,10 @@ func SetVerbose(v bool) {
 // Run runs a goose command.
 func Run(command string, db *sql.DB, dir string, args ...string) error {
 	switch command {
+	case "up-all":
+		if err := UpAll(db, dir); err != nil {
+			return err
+		}
 	case "up":
 		if err := Up(db, dir); err != nil {
 			return err

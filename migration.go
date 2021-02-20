@@ -24,7 +24,7 @@ type Migration struct {
 	Version    int64
 	Next       int64  // next version, or -1 if none
 	Previous   int64  // previous version, -1 if none
-	Source     string // path to .sql script
+	Source     string // path to .sql script or go file
 	Registered bool
 	UpFn       func(*sql.Tx) error // Up go migration function
 	DownFn     func(*sql.Tx) error // Down go migration function
@@ -76,7 +76,7 @@ func (m *Migration) run(db *sql.DB, direction bool) error {
 
 	case ".go":
 		if !m.Registered {
-			return errors.Errorf("ERROR %v: failed to run Go migration: Go functions must be registered and built into a custom binary (see https://github.com/pressly/goose/tree/master/examples/go-migrations)", m.Source)
+			return errors.Errorf("ERROR %v: failed to run Go migration: Go functions must be registered and built into a custom binary (see https://github.com/sbashilov/goose/tree/master/examples/go-migrations)", m.Source)
 		}
 		tx, err := db.Begin()
 		if err != nil {

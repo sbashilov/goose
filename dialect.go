@@ -11,6 +11,7 @@ type SQLDialect interface {
 	createVersionTableSQL() string // sql string to create the db version table
 	insertVersionSQL() string      // sql string to insert the initial version table row
 	deleteVersionSQL() string      // sql string to delete version
+	migrationSQL() string          // sql string to retrieve migrations
 	dbVersionQuery(db *sql.DB) (*sql.Rows, error)
 }
 
@@ -30,10 +31,14 @@ func SetDialect(d string) error {
 		dialect = &MySQLDialect{}
 	case "sqlite3":
 		dialect = &Sqlite3Dialect{}
+	case "mssql":
+		dialect = &SqlServerDialect{}
 	case "redshift":
 		dialect = &RedshiftDialect{}
 	case "tidb":
 		dialect = &TiDBDialect{}
+	case "clickhouse":
+		dialect = &ClickHouseDialect{}
 	default:
 		return fmt.Errorf("%q: unknown dialect", d)
 	}
@@ -63,12 +68,16 @@ func (pg PostgresDialect) insertVersionSQL() string {
 }
 
 func (pg PostgresDialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
-	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY id DESC", TableName()))
+	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY version_id DESC, id DESC", TableName()))
 	if err != nil {
 		return nil, err
 	}
 
 	return rows, err
+}
+
+func (m PostgresDialect) migrationSQL() string {
+	return fmt.Sprintf("SELECT tstamp, is_applied FROM %s WHERE version_id=$1 ORDER BY tstamp DESC LIMIT 1", TableName())
 }
 
 func (pg PostgresDialect) deleteVersionSQL() string {
@@ -97,7 +106,7 @@ func (m MySQLDialect) insertVersionSQL() string {
 }
 
 func (m MySQLDialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
-	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY id DESC", TableName()))
+	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY version_id DESC, id DESC", TableName()))
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +114,62 @@ func (m MySQLDialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
 	return rows, err
 }
 
+func (m MySQLDialect) migrationSQL() string {
+	return fmt.Sprintf("SELECT tstamp, is_applied FROM %s WHERE version_id=? ORDER BY tstamp DESC LIMIT 1", TableName())
+}
+
 func (m MySQLDialect) deleteVersionSQL() string {
 	return fmt.Sprintf("DELETE FROM %s WHERE version_id=?;", TableName())
+}
+
+////////////////////////////
+// MSSQL
+////////////////////////////
+
+// SqlServerDialect struct.
+type SqlServerDialect struct{}
+
+func (m SqlServerDialect) createVersionTableSQL() string {
+	return fmt.Sprintf(`CREATE TABLE %s (
+                id INT NOT NULL IDENTITY(1,1) PRIMARY KEY,
+                version_id BIGINT NOT NULL,
+                is_applied BIT NOT NULL,
+                tstamp DATETIME NULL DEFAULT CURRENT_TIMESTAMP
+            );`, TableName())
+}
+
+func (m SqlServerDialect) insertVersionSQL() string {
+	return fmt.Sprintf("INSERT INTO %s (version_id, is_applied) VALUES (@p1, @p2);", TableName())
+}
+
+func (m SqlServerDialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
+	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied FROM %s ORDER BY id DESC", TableName()))
+	if err != nil {
+		return nil, err
+	}
+
+	return rows, err
+}
+
+func (m SqlServerDialect) migrationSQL() string {
+	const tpl = `
+WITH Migrations AS
+(
+    SELECT tstamp, is_applied,
+    ROW_NUMBER() OVER (ORDER BY tstamp) AS 'RowNumber'
+    FROM %s
+	WHERE version_id=@p1
+)
+SELECT tstamp, is_applied
+FROM Migrations
+WHERE RowNumber BETWEEN 1 AND 2
+ORDER BY tstamp DESC
+`
+	return fmt.Sprintf(tpl, TableName())
+}
+
+func (m SqlServerDialect) deleteVersionSQL() string {
+	return fmt.Sprintf("DELETE FROM %s WHERE version_id=@p1;", TableName())
 }
 
 ////////////////////////////
@@ -130,12 +193,16 @@ func (m Sqlite3Dialect) insertVersionSQL() string {
 }
 
 func (m Sqlite3Dialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
-	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY id DESC", TableName()))
+	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY version_id DESC, id DESC", TableName()))
 	if err != nil {
 		return nil, err
 	}
 
 	return rows, err
+}
+
+func (m Sqlite3Dialect) migrationSQL() string {
+	return fmt.Sprintf("SELECT tstamp, is_applied FROM %s WHERE version_id=? ORDER BY tstamp DESC LIMIT 1", TableName())
 }
 
 func (m Sqlite3Dialect) deleteVersionSQL() string {
@@ -164,12 +231,16 @@ func (rs RedshiftDialect) insertVersionSQL() string {
 }
 
 func (rs RedshiftDialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
-	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY id DESC", TableName()))
+	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY version_id DESC, id DESC", TableName()))
 	if err != nil {
 		return nil, err
 	}
 
 	return rows, err
+}
+
+func (m RedshiftDialect) migrationSQL() string {
+	return fmt.Sprintf("SELECT tstamp, is_applied FROM %s WHERE version_id=$1 ORDER BY tstamp DESC LIMIT 1", TableName())
 }
 
 func (rs RedshiftDialect) deleteVersionSQL() string {
@@ -198,7 +269,7 @@ func (m TiDBDialect) insertVersionSQL() string {
 }
 
 func (m TiDBDialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
-	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY id DESC", TableName()))
+	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied from %s ORDER BY version_id DESC, id DESC", TableName()))
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +277,48 @@ func (m TiDBDialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
 	return rows, err
 }
 
+func (m TiDBDialect) migrationSQL() string {
+	return fmt.Sprintf("SELECT tstamp, is_applied FROM %s WHERE version_id=? ORDER BY tstamp DESC LIMIT 1", TableName())
+}
+
 func (m TiDBDialect) deleteVersionSQL() string {
 	return fmt.Sprintf("DELETE FROM %s WHERE version_id=?;", TableName())
+}
+
+////////////////////////////
+// ClickHouse
+////////////////////////////
+
+// ClickHouseDialect struct.
+type ClickHouseDialect struct{}
+
+func (m ClickHouseDialect) createVersionTableSQL() string {
+	return `
+    CREATE TABLE goose_db_version (
+      version_id Int64,
+      is_applied UInt8,
+      date Date default now(),
+      tstamp DateTime default now()
+    ) Engine = MergeTree(date, (date), 8192)
+	`
+}
+
+func (m ClickHouseDialect) dbVersionQuery(db *sql.DB) (*sql.Rows, error) {
+	rows, err := db.Query(fmt.Sprintf("SELECT version_id, is_applied FROM %s ORDER BY tstamp DESC LIMIT 1", TableName()))
+	if err != nil {
+		return nil, err
+	}
+	return rows, err
+}
+
+func (m ClickHouseDialect) insertVersionSQL() string {
+	return fmt.Sprintf("INSERT INTO %s (version_id, is_applied) VALUES (?, ?)", TableName())
+}
+
+func (m ClickHouseDialect) migrationSQL() string {
+	return fmt.Sprintf("SELECT tstamp, is_applied FROM %s WHERE version_id = ? ORDER BY tstamp DESC LIMIT 1", TableName())
+}
+
+func (m ClickHouseDialect) deleteVersionSQL() string {
+	return fmt.Sprintf("ALTER TABLE %s DELETE WHERE version_id = ?", TableName())
 }

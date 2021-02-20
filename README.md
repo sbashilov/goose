@@ -6,7 +6,7 @@ Goose is a database migration tool. Manage your database schema by creating incr
 
 ### Goals of this fork
 
-`github.com/pressly/goose` is a fork of `bitbucket.org/liamstask/goose` with the following changes:
+`github.com/sbashilov/goose` is a fork of `bitbucket.org/liamstask/goose` with the following changes:
 - No config files
 - [Default goose binary](./cmd/goose/main.go) can migrate SQL files only
 - Go migrations:
@@ -22,11 +22,11 @@ Goose is a database migration tool. Manage your database schema by creating incr
     - goose pkg doesn't register any SQL drivers anymore,
       thus no driver `panic()` conflict within your codebase!
     - goose pkg doesn't have any vendor dependencies anymore
-- We use timestamped migrations by default but recommend a hybrid approach of using timestamps in the development process and sequential versions in production.  
+- We use timestamped migrations by default but recommend a hybrid approach of using timestamps in the development process and sequential versions in production.
 
 # Install
 
-    $ go get -u github.com/pressly/goose/cmd/goose
+    $ go get -u github.com/sbashilov/goose/cmd/goose
 
 This will install the `goose` binary to your `$GOPATH/bin` directory.
 
@@ -44,21 +44,8 @@ Drivers:
     postgres
     mysql
     sqlite3
+    mssql
     redshift
-
-Commands:
-    up                   Migrate the DB to the most recent version available
-    up-to VERSION        Migrate the DB to a specific VERSION
-    down                 Roll back the version by 1
-    down-to VERSION      Roll back to a specific VERSION
-    redo                 Re-run the latest migration
-    status               Dump the migration status for the current DB
-    version              Print the current version of the database
-    create NAME [sql|go] Creates new migration file with the current timestamp
-
-Options:
-    -dir string
-        directory with migration files (default ".")
 
 Examples:
     goose sqlite3 ./foo.db status
@@ -71,7 +58,33 @@ Examples:
     goose mysql "user:password@/dbname?parseTime=true" status
     goose redshift "postgres://user:password@qwerty.us-east-1.redshift.amazonaws.com:5439/db" status
     goose tidb "user:password@/dbname?parseTime=true" status
+    goose mssql "sqlserver://user:password@dbname:1433?database=master" status
+
+Options:
+
+  -dir string
+    	directory with migration files (default ".")
+  -table string
+    	migrations table name (default "goose_db_version")
+  -h	print help
+  -v	enable verbose mode
+  -version
+    	print version
+
+Commands:
+    up                   Migrate the DB to the most recent version available
+    up-by-one            Migrate the DB up by 1
+    up-to VERSION        Migrate the DB to a specific VERSION
+    down                 Roll back the version by 1
+    down-to VERSION      Roll back to a specific VERSION
+    redo                 Re-run the latest migration
+    reset                Roll back all migrations
+    status               Dump the migration status for the current DB
+    version              Print the current version of the database
+    create NAME [sql|go] Creates new migration file with the current timestamp
+    fix                  Apply sequential ordering to migrations
 ```
+
 ## create
 
 Create a new SQL migration.
@@ -101,6 +114,13 @@ Migrate up to a specific version.
 
     $ goose up-to 20170506082420
     $ OK    20170506082420_create_table.sql
+
+## up-by-one
+
+Migrate up a single migration from the current version
+
+    $ goose up-by-one
+    $ OK    20170614145246_change_type.sql
 
 ## down
 
@@ -167,7 +187,7 @@ DROP TABLE post;
 
 Notice the annotations in the comments. Any statements following `-- +goose Up` will be executed as part of a forward migration, and any statements following `-- +goose Down` will be executed as part of a rollback.
 
-By default, all migrations are run within a transaction. Some statements like `CREATE DATABASE`, however, cannot be run within a transaction. You may optionally add `-- +goose NO TRANSACTION` to the top of your migration 
+By default, all migrations are run within a transaction. Some statements like `CREATE DATABASE`, however, cannot be run within a transaction. You may optionally add `-- +goose NO TRANSACTION` to the top of your migration
 file in order to skip transactions within that specific migration file. Both Up and Down migrations within this file will be run without transactions.
 
 By default, SQL statements are delimited by semicolons - in fact, query statements must end with a semicolon to be properly recognized by goose.
@@ -203,11 +223,11 @@ language plpgsql;
 ## Go Migrations
 
 1. Create your own goose binary, see [example](./examples/go-migrations)
-2. Import `github.com/pressly/goose`
+2. Import `github.com/sbashilov/goose`
 3. Register your migration functions
 4. Run goose command, ie. `goose.Up(db *sql.DB, dir string)`
 
-A [sample Go migration 00002_users_add_email.go file](./example/migrations-go/00002_rename_root.go) looks like:
+A [sample Go migration 00002_users_add_email.go file](./examples/go-migrations/00002_rename_root.go) looks like:
 
 ```go
 package migrations
@@ -215,7 +235,7 @@ package migrations
 import (
 	"database/sql"
 
-	"github.com/pressly/goose"
+	"github.com/sbashilov/goose"
 )
 
 func init() {
@@ -240,7 +260,7 @@ func Down(tx *sql.Tx) error {
 ```
 
 # Hybrid Versioning
-Please, read the [versioning problem](https://github.com/pressly/goose/issues/63#issuecomment-428681694) first.
+Please, read the [versioning problem](https://github.com/sbashilov/goose/issues/63#issuecomment-428681694) first.
 
 We strongly recommend adopting a hybrid versioning approach, using both timestamps and sequential numbers. Migrations created during the development process are timestamped and sequential versions are ran on production. We believe this method will prevent the problem of conflicting versions when writing software in a team environment.
 
@@ -250,7 +270,7 @@ To help you adopt this approach, `create` will use the current timestamp as the 
 
 Licensed under [MIT License](./LICENSE)
 
-[GoDoc]: https://godoc.org/github.com/pressly/goose
-[GoDoc Widget]: https://godoc.org/github.com/pressly/goose?status.svg
+[GoDoc]: https://godoc.org/github.com/sbashilov/goose
+[GoDoc Widget]: https://godoc.org/github.com/sbashilov/goose?status.svg
 [Travis]: https://travis-ci.org/pressly/goose
 [Travis Widget]: https://travis-ci.org/pressly/goose.svg?branch=master
